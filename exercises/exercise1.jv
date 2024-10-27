@@ -1,0 +1,62 @@
+pipeline AirportsPipeline {
+    
+    AirportsExtract 
+        -> AirportsTextFileInterpreter 
+        -> AirportsInterpreter 
+        -> AirportsColumnDeleter
+        -> NameHeaderWriter 
+        -> AirportsTableInterpreter 
+        -> AirportsLoader;
+    
+    // Extract files from the url
+    block AirportsExtract oftype HttpExtractor  {
+        url : "https://opendata.rhein-kreis-neuss.de/api/explore/v2.1/catalog/datasets/rhein-kreis-neuss-flughafen-weltweit/exports/csv?lang=en&timezone=Europe%2FBerlin&use_labels=true&delimiter=%3B";
+    }
+    
+    // Decode the input file content into text format
+    block AirportsTextFileInterpreter oftype TextFileInterpreter {
+        encoding : "utf8";
+        lineBreak : /\r?\n/;
+    }
+    
+    //Parse the input text file into a structured data table in CSV format
+    block AirportsInterpreter oftype CSVInterpreter {
+        delimiter : ";";
+        enclosing: "";
+        enclosingEscape : "";
+    }
+
+    //Choose columns we need to keep
+    block AirportsColumnDeleter oftype ColumnDeleter {
+        delete: [column J, column K, column L, column M];
+    }
+
+    //Write the header of the table
+    block NameHeaderWriter oftype CellWriter {
+        at : range A1:I1;
+        write:["Lfd. Nummer", "Name des Flughafens", "Ort", "Land", "IATA", "ICAO", "Latitude", "Longitude", "Altitude"];
+    }
+    
+    //Parse the table Sheet into tabular data with column types and header information
+    block AirportsTableInterpreter oftype TableInterpreter {
+        header: true;
+        columns : [
+            "Lfd. Nummer" oftype integer,
+            "Name des Flughafens" oftype text,
+            "Ort" oftype text,
+            "Land" oftype text,
+            "IATA" oftype text,
+            "ICAO" oftype text,
+            "Latitude" oftype decimal,
+            "Longitude" oftype decimal,
+            "Altitude" oftype integer,
+        ];
+    }
+    
+    //Write Table data into SQLite database
+    block AirportsLoader oftype SQLiteLoader {
+        table: "airports";
+        file: "./airports.sqlite";
+        dropTable: true;
+    }
+}
