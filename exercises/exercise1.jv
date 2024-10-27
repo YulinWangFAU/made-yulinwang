@@ -1,5 +1,6 @@
 pipeline AirportsPipeline {
     
+    //The general structure of a pipeline
     AirportsExtract 
         -> AirportsTextFileInterpreter 
         -> AirportsInterpreter 
