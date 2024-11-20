@@ -86,7 +86,6 @@ constraint CountryCodeAllowlist on text: value in [
     "PRT", "QAT", "RUS", "SAU", "SGP", "SVN", "ESP", "SWE", "CHE", "TWN", 
     "THA", "GBR", "USA"
 ];
-publish CountryCodeAllowlist as CountryCodeConstraint;
 
 
 valuetype GDPDecimal oftype decimal {
