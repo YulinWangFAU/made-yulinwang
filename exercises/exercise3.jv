@@ -1,0 +1,101 @@
+pipeline CountryStatsPipeline {
+    
+    //The general structure of a pipeline
+    ExcelExtractor
+        -> FinanceXLSXInterpreter
+        -> FinanceSheetPicker
+        -> FinanceDataSelector
+        -> NameHeaderWriter
+        -> BondIssuanceTableInterpreter 
+        -> BondIssuanceLoader;
+
+        NameHeaderWriter
+        -> GDPTableInterpreter
+        -> GDPLoader;
+
+    // Extract files from the url
+    block ExcelExtractor oftype HttpExtractor {
+        url: "https://thedocs.worldbank.org/en/doc/7d852628d96b9411d43e5d36d5dff941-0050062022/original/Graphs-Chapter-5-02082022.xlsx";
+    }
+
+    block FinanceXLSXInterpreter oftype XLSXInterpreter {}
+    
+    //Extract the sheet from the Excel file
+    block FinanceSheetPicker oftype SheetPicker {
+    sheetName: "Figure S5.1.2";
+    }
+
+    //Only keep the table with actual data
+    block FinanceDataSelector oftype CellRangeSelector {
+        select: range P2:S45;
+        }
+
+    //Write the header of the table
+    block NameHeaderWriter oftype CellWriter {
+        at : range P2:S2;
+        write:["Country Code", "Economy", "GDP per Capita", "Bond Issuance Share"];
+    }
+
+    
+
+    // Interpret and load bond issuance data
+    block BondIssuanceTableInterpreter oftype TableInterpreter {
+        header: true;
+        columns: [
+            "Country Code" oftype ISOCountryCode,
+            "Bond Issuance Share" oftype BondRangeConstraint,
+        ];
+    }
+
+    block BondIssuanceLoader oftype SQLiteLoader {
+        table: "bondIssuance";
+        file: "./country-stats.sqlite";
+        dropTable: true;
+    }
+
+    // Interpret and load GDP per capita data
+    block GDPTableInterpreter oftype TableInterpreter {
+        header: true;
+        columns: [
+            "Country Code" oftype ISOCountryCode,
+            "GDP per Capita" oftype GDPDecimal,
+        ];
+    }
+
+    block GDPLoader oftype SQLiteLoader {
+        table: "gdpPerCapita";
+        file: "./country-stats.sqlite";
+        dropTable: true;
+    }
+
+
+    
+}
+
+//Constraints
+
+// Define custom types
+valuetype ISOCountryCode oftype text {
+    constraints: [CountryCodeAllowlist];
+}
+
+constraint CountryCodeAllowlist on text: value in [
+    "AUS", "AUT", "BEL", "CAN", "CHL", "CHN", "DNK", "EGY", "FIN", "FRA", 
+    "DEU", "HKG", "HUN", "ISL", "IND", "IDN", "IRL", "ITA", "JPN", "KOR", 
+    "LTU", "LUX", "MEX", "NLD", "NZL", "NGA", "NOR", "PAK", "PHL", "POL", 
+    "PRT", "QAT", "RUS", "SAU", "SGP", "SVN", "ESP", "SWE", "CHE", "TWN", 
+    "THA", "GBR", "USA"
+];
+publish CountryCodeAllowlist as CountryCodeConstraint;
+
+
+valuetype GDPDecimal oftype decimal {
+    constraints: [GDPRange];
+}
+
+constraint GDPRange on decimal: value >= 0;
+
+valuetype BondRangeConstraint oftype decimal {
+    constraints: [BondRange];
+}
+ constraint BondRange on decimal: value >= 0 and value <= 1;
