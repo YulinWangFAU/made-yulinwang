@@ -8,7 +8,7 @@ pipeline CountryStatsPipeline {
         -> NameHeaderWriter
         -> BondIssuanceTableInterpreter 
         -> BondIssuanceLoader;
-
+    
         NameHeaderWriter
         -> GDPTableInterpreter
         -> GDPLoader;
@@ -19,20 +19,20 @@ pipeline CountryStatsPipeline {
     }
 
     block FinanceXLSXInterpreter oftype XLSXInterpreter {}
-    
+
     //Extract the sheet from the Excel file
     block FinanceSheetPicker oftype SheetPicker {
     sheetName: "Figure S5.1.2";
     }
-
+    
     //Only keep the table with actual data
     block FinanceDataSelector oftype CellRangeSelector {
-        select: range P2:S45;
+        select: range P1:S45;
         }
-
+    
     //Write the header of the table
     block NameHeaderWriter oftype CellWriter {
-        at : range P2:S2;
+        at: range A1:D1;
         write:["Country Code", "Economy", "GDP per Capita", "Bond Issuance Share"];
     }
 
