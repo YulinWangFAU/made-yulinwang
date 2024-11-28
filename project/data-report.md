@@ -56,7 +56,9 @@ The data pipeline was designed to automate the extraction, transformation, and l
 
 ### Data Pipeline Visualization
 Below is the ETL pipeline visualization for this project:
-![ETL Pipeline with Data](ETL_pipeline.png)
+<p align="center">
+  <img src="ETL_pipeline.png" alt="ETL Pipeline" width="50%">
+</p>
 
 ### Data Transformation and Cleaning Steps
 1. **COVID-19 Data**:  
@@ -94,12 +96,3 @@ Below is the ETL pipeline visualization for this project:
 
 ---
 
-## Work Packages
-
-1. **Searching for suitable datasources**: Identify datasets relevant to COVID-19 and socioeconomic factors.  
-2. **Writing Initial Project Plan**: Define the scope, main question, and milestones.  
-3. **Extract, Transform, Load**: Preprocess and clean raw data.  
-4. **Implement Automated Pipeline**: Develop a scalable pipeline for ETL.  
-5. **Implement Automated Testing**: Ensure data quality through robust testing mechanisms.  
-6. **Exploratory Data Analysis**: Perform initial analysis to uncover trends.  
-7. **Reporting**: Summarize findings in a report with visualizations and actionable insights.
