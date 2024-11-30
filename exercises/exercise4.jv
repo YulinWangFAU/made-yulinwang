@@ -14,7 +14,7 @@ pipeline MobileTemperaturePipline{
         -> DataLoader;
     
     block DataHttpExtractor oftype HttpExtractor {
-        url:" https://www.mowesta.com/data/measure/mowesta-dataset-20221107.zip";
+        url:"https://www.mowesta.com/data/measure/mowesta-dataset-20221107.zip";
     }
 
     block ZipArchiveInterpreter oftype ArchiveInterpreter {
