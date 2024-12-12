@@ -1,0 +1,46 @@
+name: testPipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
+
+    - name: Create database and tables
+      run: |
+        mkdir -p data
+        sqlite3 data/database.sqlite <<EOF
+        DROP TABLE IF EXISTS covid_data;
+        CREATE TABLE covid_data (
+          Country_Region TEXT,
+          Date TEXT,
+          Deaths INTEGER
+        );
+
+        DROP TABLE IF EXISTS world_bank_data;
+        CREATE TABLE world_bank_data (
+          Country TEXT,
+          Country_Code TEXT,
+          GDP_Per_Capita REAL,
+          Region TEXT
+        );
+        EOF
+
+    - name: Run tests
+      run: |
+        python -m unittest discover -s . -p "*.py"
