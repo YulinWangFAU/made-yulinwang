@@ -23,7 +23,6 @@ pipeline GTFSStopsPipeline {
 
     block StopsTextFileInterpreter oftype TextFileInterpreter {
         encoding: "utf8";
-        lineBreak: /\r?\n/;
     }   
 
     block StopsCSVInterpreter oftype CSVInterpreter {
@@ -32,7 +31,7 @@ pipeline GTFSStopsPipeline {
     }
 
     block DataSelector oftype ColumnDeleter {
-        delete: [column B, column D, column G, column H, column I, column J, column K];
+        delete: [column B, column D, column H, column I, column J, column K, column L];
     }
 
     
