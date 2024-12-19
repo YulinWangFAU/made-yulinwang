@@ -1,0 +1,84 @@
+pipeline GTFSStopsPipeline {
+
+    DataHttpExtractor
+        -> ZipArchiveInterpreter
+        -> DataFilePicker
+        -> StopsTextFileInterpreter
+        -> StopsCSVInterpreter
+        -> DataSelector
+        -> DataTableInterpreter
+        -> DataLoader;
+
+    block DataHttpExtractor oftype HttpExtractor {
+        url: "https://gtfs.rhoenenergie-bus.de/GTFS.zip";
+    }
+
+    block ZipArchiveInterpreter oftype ArchiveInterpreter {
+        archiveType: "zip";
+    }
+
+    block DataFilePicker oftype FilePicker {
+       path: "./stops.txt";
+    }
+
+    block StopsTextFileInterpreter oftype TextFileInterpreter {
+        encoding: "utf8";
+        lineBreak: /\r?\n/;
+    }   
+
+    block StopsCSVInterpreter oftype CSVInterpreter {
+        delimiter : ",";
+        enclosing: '"';
+    }
+
+    block DataSelector oftype ColumnDeleter {
+        delete: [column B, column D, column G, column H, column I, column J, column K];
+    }
+
+    
+
+    block DataTableInterpreter oftype TableInterpreter {
+        header: true;
+        columns: [
+            "stop_id" oftype integer,
+            "stop_name" oftype NonEmptyText,
+            "stop_lat" oftype LatitudeRange,
+            "stop_lon" oftype LongitudeRange,
+            "zone_id" oftype ZoneConstraint
+        ];
+    }
+
+    block DataLoader oftype SQLiteLoader {
+        table: "stops";
+        file: "./gtfs.sqlite";
+        dropTable: true;
+    }
+
+}
+
+// Define custom value types and constraints
+
+
+valuetype NonEmptyText oftype text {
+    constraints: [NonEmptyConstraint];
+}
+
+constraint NonEmptyConstraint on text: value != "";
+
+valuetype LatitudeRange oftype decimal {
+    constraints: [LatitudeConstraint];
+}
+
+constraint LatitudeConstraint on decimal: value >= -90 and value <= 90;
+
+valuetype LongitudeRange oftype decimal {
+    constraints: [LongitudeConstraint];
+}
+
+constraint LongitudeConstraint on decimal: value >= -90 and value <= 90;
+
+valuetype ZoneConstraint oftype integer {
+    constraints: [Zone1925Constraint];
+}
+
+constraint Zone1925Constraint on integer: value == 1925;
