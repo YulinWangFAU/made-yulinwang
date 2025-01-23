@@ -1,98 +1,177 @@
-import json
 import os
-import requests
-import numpy as np
+import sqlite3
 import pandas as pd
-import sqlalchemy as sql
-from io import StringIO
-from kaggle.api.kaggle_api_extended import KaggleApi
-from sklearn.impute import KNNImputer
 
-def extract_csv_data(url):
-    response = requests.get(url)
-    if response.status_code == 200:
-        print("CSV file downloaded successfully.")
-        csv_data = StringIO(response.content.decode('utf-8'))
-        df = pd.read_csv(csv_data, encoding='latin1')
-        return df
-    else:
-        print(f"Failed to retrieve data from {url}, status code: {response.status_code}")
-        return None
+# Directory setup
+DATA_DIR = "./data"
+PROJECT_DIR = "./project"
+DATABASE_PATH = os.path.join(DATA_DIR, "database.sqlite")
 
-def create_sqlite_database(database_name):
-    data_directory = './data'
-    if not os.path.exists(data_directory):
-        os.makedirs(data_directory)
+# Ensure directories exist
+os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(PROJECT_DIR, exist_ok=True)
 
-    database_path = os.path.join(data_directory, database_name)
-    if os.path.exists(database_path):
-        os.remove(database_path)
+def download_data():
+    """Download datasets and save them locally."""
+    covid_data_url = "https://github.com/owid/covid-19-data/raw/master/public/data/owid-covid-data.csv"
+    socioeconomic_data_path = "/Users/wangyulin/MADE/made-yulinwang/data/socioeconomic_Data.csv"  # Local file path for socioeconomic data
 
-    engine = sql.create_engine(f'sqlite:///{database_path}')
-    return engine
+    covid_data = pd.read_csv(covid_data_url)
+    return covid_data, socioeconomic_data_path
 
-def filter_americas(df, column_name='Country'):
+def clean_covid_data(covid_data):
+    """Clean and preprocess COVID-19 data, retaining year and month dimensions."""
+    covid_data = covid_data.rename(columns={
+        'location': 'country',
+        'date': 'year'
+    })
+    covid_data['date'] = pd.to_datetime(covid_data['year'])
+    covid_data['year'] = covid_data['date'].dt.year
+    covid_data['month'] = covid_data['date'].dt.month
+
     americas_countries = [
-        "Argentina", "Bahamas", "Barbados", "Belize", "Bolivia", "Brazil", "Canada", "Chile", "Colombia", "Costa Rica", "Cuba", "Dominica", "Dominican Republic", "Ecuador", "El Salvador", "Grenada", "Guatemala", "Guyana", "Haiti", "Honduras", "Jamaica", "Mexico", "Nicaragua", "Panama", "Paraguay", "Peru", "Saint Kitts and Nevis", "Saint Lucia", "Saint Vincent and the Grenadines", "Suriname", "Trinidad and Tobago", "United States", "Uruguay", "Venezuela"
+        "Argentina", "Brazil", "Canada", "Chile", "Colombia", "Mexico", "United States", 
+        "Peru", "Cuba", "Venezuela", "Ecuador", "Guatemala", "Honduras", "Paraguay", 
+        "Uruguay", "Bolivia", "Panama", "Costa Rica"
     ]
-    return df[df[column_name].isin(americas_countries)]
+    covid_data = covid_data[covid_data['country'].isin(americas_countries)]
+
+    country_mapping = {
+        "Bahamas, The": "Bahamas",
+        "Venezuela, RB": "Venezuela",
+    }
+    covid_data["country"] = covid_data["country"].replace(country_mapping)
+
+    covid_columns = [
+        'country', 'date', 'year', 'month',
+        'total_cases', 'total_deaths',
+        'excess_mortality_cumulative_per_million', 'total_vaccinations_per_hundred',
+        'icu_patients_per_million', 'hospital_beds_per_thousand', 'population'
+    ]
+    covid_data = covid_data[covid_columns]
+
+    covid_monthly = covid_data.groupby(['country', 'year', 'month']).agg({
+        'total_cases': 'max',
+        'total_deaths': 'max',
+        'excess_mortality_cumulative_per_million': 'max',
+        'total_vaccinations_per_hundred': 'max',
+        'icu_patients_per_million': 'max',
+        'hospital_beds_per_thousand': 'max',
+        'population': 'max'
+    }).reset_index()
+
+    return covid_monthly
+
+def aggregate_covid_data(covid_monthly):
+    """Aggregate COVID-19 data by year for merging with socioeconomic data."""
+    covid_aggregated = covid_monthly.groupby(['country', 'year']).agg({
+        'total_cases': 'max',
+        'total_deaths': 'max',
+        'excess_mortality_cumulative_per_million': 'mean',
+        'total_vaccinations_per_hundred': 'mean',
+        'icu_patients_per_million': 'mean',
+        'hospital_beds_per_thousand': 'mean',
+        'population': 'max'
+    }).reset_index()
+
+    return covid_aggregated
+
+def clean_socioeconomic_data(file_path):
+    """Clean, transform, and pivot socioeconomic data."""
+    # Load the raw data
+    raw_data = pd.read_csv(file_path)
+
+    # Convert the data into a long format
+    data_long = raw_data.melt(
+        id_vars=["Country Name", "Country Code", "Series Name", "Series Code"],
+        var_name="year",
+        value_name="indicator_value"
+    )
+
+    # Rename columns for clarity
+    data_long.rename(columns={
+        "Country Name": "country",
+        "Series Name": "indicator_name",
+    }, inplace=True)
+
+    # Extract the year from the `year` column
+    data_long["year"] = data_long["year"].str.extract("([0-9]{4})").astype(int)
+
+    # Ensure `indicator_value` is numeric
+    data_long["indicator_value"] = pd.to_numeric(data_long["indicator_value"], errors="coerce")
+
+    # Select relevant indicators
+    selected_indicators = [
+        "GDP per capita (current US$)",
+        "Life expectancy at birth, total (years)",
+        "Unemployment, total (% of total labor force) (modeled ILO estimate)",
+        "Gini index",
+        "Current health expenditure (% of GDP)",
+        "Domestic general government health expenditure per capita (current US$)",
+        "Urban population (% of total population)",
+        "Poverty headcount ratio at $2.15 a day (2017 PPP) (% of population)"
+    ]
+    data_filtered = data_long[data_long["indicator_name"].isin(selected_indicators)]
+
+    # Filter for countries in the Americas
+    americas_countries = [
+        "Argentina", "Brazil", "Canada", "Chile", "Colombia", "Mexico", "United States", 
+        "Peru", "Cuba", "Venezuela", "Ecuador", "Guatemala", "Honduras", "Paraguay", 
+        "Uruguay", "Bolivia", "Panama", "Costa Rica"
+    ]
+    data_filtered = data_filtered[data_filtered["country"].isin(americas_countries)]
+
+    # Map country names to standardized format
+    country_mapping = {
+        "Bahamas, The": "Bahamas",
+        "Venezuela, RB": "Venezuela",
+    }
+    data_filtered["country"] = data_filtered["country"].replace(country_mapping)
+
+    # Drop rows with missing or invalid values
+    data_cleaned = data_filtered.dropna()
+
+    # Pivot the data to make indicators as columns
+    data_pivoted = data_cleaned.pivot_table(
+        index=["country", "year"],  # Country and year as index
+        columns="indicator_name",  # Indicators as columns
+        values="indicator_value"   # Values
+    ).reset_index()  # Reset index for easier merging
+
+    return data_pivoted
+
+
+def clean_and_merge_data(covid_data, socioeconomic_data_path):
+    """Clean and merge COVID-19 and socioeconomic data, with monthly and yearly aggregation."""
+    covid_monthly = clean_covid_data(covid_data)
+
+    covid_aggregated = aggregate_covid_data(covid_monthly)
+
+    socioeconomic_data = clean_socioeconomic_data(socioeconomic_data_path)
+
+    merged_data = pd.merge(covid_aggregated, socioeconomic_data, on=["country", "year"], how="outer")
+
+    merged_data.fillna(0, inplace=True)
+
+    return covid_monthly, merged_data
+
+def save_to_database(covid_monthly, merged_data):
+    """Save cleaned data to SQLite database."""
+    connection = sqlite3.connect(DATABASE_PATH)
+
+    covid_monthly.to_sql("covid_monthly", connection, if_exists="replace", index=False)
+    merged_data.to_sql("merged_data", connection, if_exists="replace", index=False)
+
+    connection.close()
+
+    print("Data saved to database at", DATABASE_PATH)
 
 def main():
-    # COVID-19 Mortality Data
-    covid_url = "https://github.com/CSSEGISandData/COVID-19/raw/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv"
-    df_covid = extract_csv_data(covid_url)
-    df_covid = df_covid.drop(['Province/State', 'Lat', 'Long'], axis=1)
-    df_covid = df_covid.melt(id_vars=['Country/Region'], var_name='Date', value_name='Deaths')
-    df_covid['Date'] = pd.to_datetime(df_covid['Date'], format='%m/%d/%y')
-    df_covid = df_covid.groupby(['Country/Region', 'Date']).sum().reset_index()
+    covid_data, socioeconomic_data_path = download_data()
 
-    # Filter COVID-19 data for Americas
-    df_covid = filter_americas(df_covid, column_name='Country/Region')
+    covid_monthly, merged_data = clean_and_merge_data(covid_data, socioeconomic_data_path)
 
-    # World Bank Data
-    world_bank_url = "data/API_NY.GDP.PCAP.CD_DS2_en_csv_v2_142.csv"
-    df_world_bank = pd.read_csv(world_bank_url, skiprows=4)
-    df_world_bank = df_world_bank.rename(columns={'Country Name': 'Country', '2020': 'GDP per Capita'})
-    df_world_bank = df_world_bank[['Country', 'Country Code', 'GDP per Capita']]
-
-    # Additional World Bank Data
-    healthcare_expenditure_url = "data/API_SH.XPD.CHEX.GD.ZS_DS2_en_csv_v2_4879.csv"
-    df_healthcare = pd.read_csv(healthcare_expenditure_url, skiprows=4)
-    df_healthcare = df_healthcare.rename(columns={'Country Name': 'Country', '2020': 'Healthcare Expenditure Per Capita'})
-    df_healthcare = df_healthcare[['Country', 'Healthcare Expenditure Per Capita']]
-
-    urbanization_url = "data/API_SP.URB.TOTL_DS2_en_csv_v2_976.csv"
-    df_urbanization = pd.read_csv(urbanization_url, skiprows=4)
-    df_urbanization = df_urbanization.rename(columns={'Country Name': 'Country', '2020': 'Urbanization Rate'})
-    df_urbanization = df_urbanization[['Country', 'Urbanization Rate']]
-
-    population_density_url = "data/API_EN.POP.DNST_DS2_en_csv_v2_1002.csv"
-    df_population_density = pd.read_csv(population_density_url, skiprows=4)
-    df_population_density = df_population_density.rename(columns={'Country Name': 'Country', '2020': 'Population Density'})
-    df_population_density = df_population_density[['Country', 'Population Density']]
-
-    # Filter World Bank data for Americas
-    df_world_bank = filter_americas(df_world_bank)
-    df_healthcare = filter_americas(df_healthcare)
-    df_urbanization = filter_americas(df_urbanization)
-    df_population_density = filter_americas(df_population_density)
-
-    # Merge World Bank Data
-    df_world_bank = df_world_bank.merge(df_healthcare, on='Country', how='left')
-    df_world_bank = df_world_bank.merge(df_urbanization, on='Country', how='left')
-    df_world_bank = df_world_bank.merge(df_population_density, on='Country', how='left')
-
-    # Merge all datasets
-    df_covid = df_covid.merge(df_world_bank, left_on='Country/Region', right_on='Country', how='left')
-
-    # Create SQLite Database
-    engine = create_sqlite_database('database.sqlite')
-
-    # Save to SQLite
-    df_covid.to_sql('covid_deaths', con=engine, index=False)
-    df_world_bank.to_sql('world_bank_data', con=engine, index=False)
-
-    print("Data pipeline executed and stored in database.sqlite successfully.")
+    save_to_database(covid_monthly, merged_data)
 
 if __name__ == "__main__":
     main()
